@@ -104,7 +104,7 @@ if __name__ == "__main__":
     now_tw = datetime.now(TZ_TW)
     
     # 週末幽靈防堵：如果是週日，系統直接優雅休眠
-    if now_tw.weekday() == 9:
+    if now_tw.weekday() == 6:
         print("今日為週日，全球休市，方舟 6.0 進入休眠模式。")
         exit()
 
