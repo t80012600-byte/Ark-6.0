@@ -1,12 +1,12 @@
 """
 =============================================================================
-ARK 6.0: THE ULTIMATE QUANTITATIVE & MACRO PIPELINE (ABSOLUTE DEFENSE EDITION)
+ARK 6.0: THE ULTIMATE QUANTITATIVE & MACRO PIPELINE (IMMORTAL TURTLE EDITION)
 =============================================================================
-Architectural Defenses:
-1. Independent Blast Doors: Each macro ticker fails independently.
-2. Cross-Validation Sandbox: 0.4% price tolerance fuse.
-3. Length Check: Prevents moving average mathematical crashes.
-4. Transmission Armor: 3x Retry mechanism implemented for LINE API dispatch.
+Deep Audited Defenses:
+1. XML Timeout Shield: Feedparser is wrapped in requests.get() to prevent hanging.
+2. Dynamic Column Binding: Immune to pandas_ta future version column naming changes.
+3. NaN Filtration: Protects float formatting and math operations from None/NaN crashes.
+4. Independent Blast Doors & 0.4% Tolerance Sandbox implemented.
 =============================================================================
 """
 
@@ -25,17 +25,16 @@ LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_USER_ID = os.environ.get("LINE_USER_ID")
 AV_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY") 
 TZ_TW = pytz.timezone('Asia/Taipei')
-TARGET_STOCK = "2891.TW" # 鎖定標的：中信金
+TARGET_STOCK = "2891.TW"
 
 # --- 2. 軍規級容錯防禦模組 ---
 def fetch_with_retry(func, retries=3, delay=3):
-    """執行指數退避重試，慢速但絕對穩健"""
     for attempt in range(retries):
         try:
             return func()
         except Exception as e:
             if attempt == retries - 1:
-                return f"⚠️ [系統防禦] 節點重試失敗"
+                return f"⚠️ [系統防禦] 節點連線逾時或受阻"
             time.sleep(delay * (2 ** attempt))
 
 # --- 3. 獨立防爆門：全球總經雷達 ---
@@ -57,22 +56,31 @@ def get_macro_data():
         report = []
         for name, ticker in tickers.items():
             try:
-                data = yf.download(ticker, period="1d", auto_adjust=False, progress=False)
+                # 抓取 5 天確保能避開單日休市造成的空表
+                data = yf.Ticker(ticker).history(period="5d", auto_adjust=False)
                 if not data.empty:
-                    close_price = float(data['Close'].iloc[-1])
-                    report.append(f"🔹 {name}: {close_price:.2f}")
+                    # 濾除 NaN 幽靈數據
+                    data = data.dropna(subset=['Close'])
+                    if not data.empty:
+                        close_price = float(data['Close'].iloc[-1])
+                        report.append(f"🔹 {name}: {close_price:.2f}")
+                    else:
+                        report.append(f"⚠️ {name}: [無有效報價]")
                 else:
                     report.append(f"⚠️ {name}: [無報價/休市]")
             except Exception:
-                report.append(f"⚠️ {name}: [資料源異常]")
+                report.append(f"⚠️ {name}: [資料庫異常]")
         return "\n".join(report)
     return fetch_with_retry(_fetch)
 
-# --- 4. 主力情緒新聞雷達 ---
+# --- 4. 主力情緒新聞雷達 (防掛死封裝) ---
 def get_news():
     def _fetch():
         url = "https://news.google.com/rss/search?q=中信金+OR+金融股+OR+外資+OR+聯準會&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-        feed = feedparser.parse(url)
+        # 絕對防禦：不讓 feedparser 自己連線，由 requests 強制 10 秒超時控管
+        res = requests.get(url, timeout=10)
+        feed = feedparser.parse(res.content)
+        
         news_list = []
         for i, entry in enumerate(feed.entries[:5]):
             title = entry.title
@@ -84,19 +92,30 @@ def get_news():
         return "\n".join(news_list)
     return fetch_with_retry(_fetch)
 
+# --- 工具函數：動態萃取指標 (免疫套件改版) ---
+def get_ta_val(df, prefix):
+    cols = [c for c in df.columns if c.startswith(prefix)]
+    if not cols:
+        raise ValueError(f"無法產生指標: {prefix}")
+    val = df[cols[0]].iloc[-1]
+    if pd.isna(val):
+        raise ValueError(f"指標 {prefix} 產生無效空值")
+    return float(val)
+
 # --- 5. 終極沙盒：交叉比對與微觀武器 ---
 def run_sandbox_ta():
     report = "📊 【中信金 網格量化沙盒】\n"
     try:
         data = yf.Ticker(TARGET_STOCK).history(period="100d", auto_adjust=False)
         
-        # 防呆檢查：資料不足 60 天絕對不硬算
-        if data.empty or len(data) < 60:
-            raise ValueError("歷史資料受損或不足，保護機制啟動")
+        if data.empty or len(data) < 65:
+            raise ValueError("歷史資料不足 65 天，強制保護")
 
-        close_price = data['Close'].iloc[-1]
+        # 清理可能含有 NaN 的收盤價，確保基準價純淨
+        data = data.dropna(subset=['Close', 'High', 'Low'])
+        close_price = float(data['Close'].iloc[-1])
         
-        # Alpha Vantage 交叉驗證保險絲 (容錯 0.4%)
+        # Alpha Vantage 交叉驗證
         if AV_API_KEY and AV_API_KEY != "None":
             try:
                 av_url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={TARGET_STOCK}&apikey={AV_API_KEY}"
@@ -105,64 +124,64 @@ def run_sandbox_ta():
                     av_price = float(av_data["Global Quote"]["05. price"])
                     diff = abs(close_price - av_price) / close_price
                     if diff > 0.004:
-                        raise ValueError(f"驗證熔斷 (Yahoo:{close_price}, AV:{av_price})")
+                        raise ValueError(f"數據分歧過大熔斷 (Yahoo:{close_price}, AV:{av_price})")
             except ValueError as ve:
-                raise ve # 價格衝突，強制熔斷
+                raise ve 
             except Exception:
-                pass # 若 AV 斷線，信任 Yahoo 繼續運算
+                pass 
 
         report += f"🎯 基準收盤價: {close_price:.2f}\n"
 
-        # Pivot Points (S1/S2)
-        high = data['High'].iloc[-2]
-        low = data['Low'].iloc[-2]
-        close_prev = data['Close'].iloc[-2]
+        # Pivot Points
+        high = float(data['High'].iloc[-2])
+        low = float(data['Low'].iloc[-2])
+        close_prev = float(data['Close'].iloc[-2])
         pivot = (high + low + close_prev) / 3
         s1 = (pivot * 2) - high
         s2 = pivot - (high - low)
         report += f"🛡️ S1伏擊區: {s1:.2f} | 💀 S2極限: {s2:.2f}\n"
 
-        # ATR, Z-Score, Bias 60MA
+        # 執行技術指標運算
         data.ta.atr(length=14, append=True)
         data.ta.zscore(length=20, append=True)
         data.ta.sma(length=60, append=True)
-        atr = float(data['ATRr_14'].iloc[-1])
-        zscore = float(data['Z_20'].iloc[-1])
-        bias_60 = ((close_price - float(data['SMA_60'].iloc[-1])) / float(data['SMA_60'].iloc[-1])) * 100
-        report += f"⚡ 波幅(ATR): {atr:.2f} | 📏 乖離(Z): {zscore:.2f}\n"
-        report += f"🌊 季線安全氣囊: {bias_60:.1f}%\n"
-
-        # RSI, MFI, Williams %R
         data.ta.rsi(length=14, append=True)
         data.ta.mfi(length=14, append=True)
         data.ta.willr(append=True)
-        rsi = float(data['RSI_14'].iloc[-1])
-        mfi = float(data['MFI_14'].iloc[-1])
-        willr = float(data['WILLR_14'].iloc[-1])
-        report += f"📉 RSI: {rsi:.1f} | 💰 MFI: {mfi:.1f}\n"
-        report += f"🐍 威廉觸底指標: {willr:.0f}\n"
-
-        # MACD, KD
         data.ta.macd(append=True)
         data.ta.stoch(append=True)
-        macd_hist = float(data['MACDh_12_26_9'].iloc[-1])
-        k = float(data['STOCHk_14_3_3'].iloc[-1])
-        d = float(data['STOCHd_14_3_3'].iloc[-1])
+
+        # 動態安全萃取數值
+        atr = get_ta_val(data, 'ATRr')
+        zscore = get_ta_val(data, 'Z_')
+        sma60 = get_ta_val(data, 'SMA_60')
+        rsi = get_ta_val(data, 'RSI_')
+        mfi = get_ta_val(data, 'MFI_')
+        willr = get_ta_val(data, 'WILLR_')
+        macd_hist = get_ta_val(data, 'MACDh')
+        k = get_ta_val(data, 'STOCHk')
+        d = get_ta_val(data, 'STOCHd')
+
+        bias_60 = ((close_price - sma60) / sma60) * 100
+
+        report += f"⚡ 波幅(ATR): {atr:.2f} | 📏 乖離(Z): {zscore:.2f}\n"
+        report += f"🌊 季線安全氣囊: {bias_60:.1f}%\n"
+        report += f"📉 RSI: {rsi:.1f} | 💰 MFI: {mfi:.1f}\n"
+        report += f"🐍 威廉觸底指標: {willr:.0f}\n"
         report += f"🌪️ MACD柱狀: {macd_hist:.3f}\n"
         report += f"🇹🇼 KD共識: K{k:.0f}/D{d:.0f}\n"
 
     except Exception as e:
-        report += f"⚠️ 沙盒保險絲已熔斷 (資料交叉保護)\n原因: {e}\n(為求純淨，本日屏蔽技術面數據)\n"
+        report += f"⚠️ 沙盒保險絲已熔斷 (底層保護)\n原因: {e}\n(為求純淨，本日屏蔽技術面數據)\n"
     
     return report
 
-# --- 6. 通訊兵重裝甲部屬 (LINE API 附帶重試機制) ---
+# --- 6. 通訊兵重裝甲部屬 ---
 def send_line_alert(message):
     if not LINE_TOKEN or not LINE_USER_ID:
-        print("系統日誌: 未偵測到 LINE 金鑰，停止發送。")
+        print("未偵測到 LINE 金鑰。")
         return
     
-    # 執行字數安全截斷
     safe_message = message[:900] + "\n...(情報過大，啟動安全截斷)" if len(message) > 900 else message
 
     url = 'https://api.line.me/v2/bot/message/push'
@@ -175,21 +194,18 @@ def send_line_alert(message):
         "messages": [{"type": "text", "text": safe_message}]
     }
     
-    # 【防禦升級】通訊兵防彈衣：重試 3 次
     for attempt in range(3):
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=10)
             if response.status_code == 200:
-                print("系統日誌: 戰報成功抵達指揮所！")
+                print("戰報發送成功！")
                 return
-            else:
-                print(f"系統日誌: 發送失敗 (HTTP {response.status_code})，準備重試...")
-        except Exception as e:
-            print(f"系統日誌: 網路瞬斷 ({e})，準備重試...")
+        except Exception:
+            pass
         time.sleep(3)
-    print("系統日誌: 3 次通訊皆失敗，放棄發送。")
+    print("通訊徹底失敗。")
 
-# --- 7. 系統主引擎：智能日曆分流 ---
+# --- 7. 主引擎 ---
 if __name__ == "__main__":
     now_tw = datetime.now(TZ_TW)
     weekday = now_tw.weekday()
