@@ -6,7 +6,7 @@ on:
     - cron: '15 23 * * *'
     # 🌃 夜間戰報：台灣時間晚上 21:45 (UTC 13:45)
     - cron: '45 13 * * *'
-  workflow_dispatch: # 保留手動測試按鈕，讓您可以隨時點擊發射
+  workflow_dispatch:
 
 jobs:
   run-scraper:
@@ -18,15 +18,15 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install Dependencies
         run: |
-          pip install requests pandas yfinance pandas_ta pytz
+          pip install requests pandas yfinance pandas-ta pytz feedparser
 
       - name: Run Scraper
         env:
-          LINE_NOTIFY_TOKEN: ${{ secrets.LINE_NOTIFY_TOKEN }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
           ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
-        run: python ark_scraper.py 
-        # ⚠️ 注意：如果您外層的 Python 檔名不是 ark_scraper.py，請將上面這行改為您的實際檔名
+        run: python ark_scraper.py
