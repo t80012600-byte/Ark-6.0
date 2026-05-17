@@ -1,16 +1,11 @@
 """
 =============================================================================
-ARK 6.0: THE ULTIMATE QUANTITATIVE & MACRO PIPELINE (DEATH STAR EDITION)
+ARK 6.0: THE ULTIMATE QUANTITATIVE & MACRO PIPELINE (TURTLE ARMOR EDITION)
 =============================================================================
-Architectural Note for Future Maintainers / AI Agents:
-1. Exponential Backoff: Bypasses API rate limits.
-2. Smart Calendar Routing: 
-   - Morning (07:30): Full Macro + 13 Quant Weapons + News.
-   - Night (22:00): Full Macro + News (Pre-US Market).
-   - Weekend (Sat Night / Sun): News ONLY (Radar Silence for static markets).
-3. Sandbox Fuse: Technical analysis is isolated. If data is polluted, the fuse 
-   blows, shielding the main macro report.
-4. Payload Truncation: Complies with LINE Push 1000-char limits.
+Architectural Defenses:
+1. Independent Blast Doors: Each macro ticker fails independently without crashing the suite.
+2. Cross-Validation Sandbox: 0.4% price tolerance between Yahoo and Alpha Vantage.
+3. Length Check: Prevents moving average crashes if historical data is truncated.
 =============================================================================
 """
 
@@ -27,24 +22,23 @@ import pytz
 # --- 1. 基礎設施與金鑰掛載 ---
 LINE_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_USER_ID = os.environ.get("LINE_USER_ID")
-AV_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY") # 沙盒擴充備用金鑰
+AV_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY") 
 TZ_TW = pytz.timezone('Asia/Taipei')
 TARGET_STOCK = "2891.TW" # 鎖定標的：中信金
 
-# --- 2. 軍規級容錯防禦模組 (Exponential Backoff) ---
-def fetch_with_retry(func, retries=3, delay=2):
-    """執行指數退避重試，防止網路瞬斷"""
+# --- 2. 軍規級容錯防禦模組 ---
+def fetch_with_retry(func, retries=3, delay=3):
+    """執行指數退避重試，慢速但絕對穩健"""
     for attempt in range(retries):
         try:
             return func()
         except Exception as e:
             if attempt == retries - 1:
-                return f"[資料異常] {str(e)}"
+                return f"⚠️ [系統防禦] 多次重試失敗: {str(e)}"
             time.sleep(delay * (2 ** attempt))
 
-# --- 3. 擴充版：全球總經與外資透視雷達 ---
+# --- 3. 擴充版：全球總經與外資透視雷達 (獨立防爆門版) ---
 def get_macro_data():
-    """抓取美股、美債、VIX、匯率及外資ETF，強制鎖死還原權值陷阱"""
     def _fetch():
         tickers = {
             "VIX (恐慌指數)": "^VIX",
@@ -61,20 +55,22 @@ def get_macro_data():
         }
         report = []
         for name, ticker in tickers.items():
-            data = yf.download(ticker, period="1d", auto_adjust=False, progress=False)
-            if not data.empty:
-                close_price = float(data['Close'].iloc[-1])
-                report.append(f"🔹 {name}: {close_price:.2f}")
-            else:
-                report.append(f"⚠️ {name}: [無報價/休市]")
+            # 【防禦升級】每個指標獨立 try...except，壞掉一個不會拖累全部
+            try:
+                data = yf.download(ticker, period="1d", auto_adjust=False, progress=False)
+                if not data.empty:
+                    close_price = float(data['Close'].iloc[-1])
+                    report.append(f"🔹 {name}: {close_price:.2f}")
+                else:
+                    report.append(f"⚠️ {name}: [無報價/休市]")
+            except Exception:
+                report.append(f"⚠️ {name}: [資料源異常]")
         return "\n".join(report)
     return fetch_with_retry(_fetch)
 
 # --- 4. 中信金專屬：主力情緒新聞雷達 ---
 def get_news():
-    """抓取中信金專屬新聞，並執行字數截斷防禦"""
     def _fetch():
-        # 鎖定中信金與金融大局關鍵字
         url = "https://news.google.com/rss/search?q=中信金+OR+金融股+OR+外資+OR+聯準會&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         feed = feedparser.parse(url)
         news_list = []
@@ -83,20 +79,38 @@ def get_news():
             if len(title) > 32:
                 title = title[:32] + "..."
             news_list.append(f"📰 {title}")
+        if not news_list:
+            return "📰 目前無重大相關新聞。"
         return "\n".join(news_list)
     return fetch_with_retry(_fetch)
 
-# --- 5. 終極沙盒：中信金 13 項微觀量化武器 ---
+# --- 5. 終極沙盒：交叉比對與 13 項微觀武器 ---
 def run_sandbox_ta():
-    """隔離沙盒運算區：若資料庫污染或誤差過大，保險絲自動熔斷"""
     report = "📊 【中信金 網格量化沙盒】\n"
     try:
-        # 抓取 100 天歷史資料，確保平滑指標(MACD/季線)準確
         data = yf.Ticker(TARGET_STOCK).history(period="100d", auto_adjust=False)
-        if data.empty:
-            raise ValueError("Yahoo API 歷史資料回傳空白")
+        
+        # 【防禦升級】防呆檢查：資料不足 60 天絕對不硬算季線
+        if data.empty or len(data) < 60:
+            raise ValueError("歷史資料受損或不足 60 天，無法安全運算")
 
         close_price = data['Close'].iloc[-1]
+        
+        # 【防禦升級】Alpha Vantage ±0.4% 交叉驗證保險絲
+        if AV_API_KEY and AV_API_KEY != "None":
+            try:
+                av_url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={TARGET_STOCK}&apikey={AV_API_KEY}"
+                av_data = requests.get(av_url, timeout=10).json()
+                if "Global Quote" in av_data and "05. price" in av_data["Global Quote"]:
+                    av_price = float(av_data["Global Quote"]["05. price"])
+                    diff = abs(close_price - av_price) / close_price
+                    if diff > 0.004:
+                        raise ValueError(f"三方驗證熔斷！(Yahoo:{close_price}, AV:{av_price}, 誤差大於0.4%)")
+            except ValueError as ve:
+                raise ve # 真正價格衝突，強制熔斷
+            except Exception:
+                pass # 若 AV 免費 API 塞車斷線，則信任 Yahoo 繼續運算 (確保戰報產出)
+
         report += f"🎯 基準收盤價: {close_price:.2f}\n"
 
         # [空間防禦] Pivot Points (S1/S2)
@@ -125,7 +139,7 @@ def run_sandbox_ta():
         rsi = data['RSI_14'].iloc[-1]
         mfi = data['MFI_14'].iloc[-1]
         willr = data['WILLR_14'].iloc[-1]
-        report += f"📉 RSI: {rsi:.1f} | 💰 MFI(籌碼): {mfi:.1f}\n"
+        report += f"📉 RSI: {rsi:.1f} | 💰 MFI: {mfi:.1f}\n"
         report += f"🐍 威廉觸底指標: {willr:.0f}\n"
 
         # [動能與共識] MACD, KD
@@ -138,14 +152,12 @@ def run_sandbox_ta():
         report += f"🇹🇼 KD共識: K{k:.0f}/D{d:.0f}\n"
 
     except Exception as e:
-        # 保險絲熔斷機制
-        report += f"⚠️ 沙盒保險絲已熔斷 (容錯保護啟動)\n原因: {e}\n(請總司令直接查看券商APP獲取微觀數據)\n"
+        report += f"⚠️ 沙盒保險絲已熔斷 (容錯保護啟動)\n原因: {e}\n(為求安全，本日屏蔽技術面數據)\n"
     
     return report
 
 # --- 6. 通訊兵部屬 (LINE Push API) ---
 def send_line_alert(message):
-    """保留您的 Push API 專線，並執行 1000 字元截斷防禦"""
     if not LINE_TOKEN or not LINE_USER_ID:
         print("未偵測到 LINE 金鑰。")
         return
@@ -163,7 +175,7 @@ def send_line_alert(message):
     }
     requests.post(url, headers=headers, json=payload)
 
-# --- 7. 系統主引擎：智能日曆分流 (Smart Routing) ---
+# --- 7. 系統主引擎：智能日曆分流 ---
 if __name__ == "__main__":
     now_tw = datetime.now(TZ_TW)
     weekday = now_tw.weekday()
@@ -172,29 +184,24 @@ if __name__ == "__main__":
     header = f"🚀 【方舟 6.0 死神母艦】\n時間: {now_tw.strftime('%m-%d %H:%M')}\n" + "-"*20 + "\n"
     final_report = header
 
-    # 狀態判斷
-    is_weekend_quiet = (weekday == 5 and hour > 12) or (weekday == 6) # 週六過午與週日全天
+    is_weekend_quiet = (weekday == 5 and hour > 12) or (weekday == 6)
     is_morning = hour < 12
 
     if is_weekend_quiet:
-        # 【週末休眠模式】：關閉算力，只報新聞
         final_report += "🌙 [週末情報監聽模式]\n(市場休市，微觀雷達關閉)\n"
         final_report += get_news()
     else:
         if is_morning:
-            # 【晨間全武裝模式】 (包含週六早上：結算美股週五戰果)
             final_report += "☀️ [晨間刺刀肉搏模式]\n\n"
             final_report += run_sandbox_ta() + "\n"
             final_report += "🌍 [全球總經與外資雷達]\n"
-            final_report += get_macro_data() + "\n"
+            final_report += get_macro_data() + "\n\n"
             final_report += get_news()
         else:
-            # 【夜間宏觀模式】 (週一至週五晚上)
             final_report += "🌙 [美股夜間預警模式]\n\n"
             final_report += "🌍 [全球總經與外資雷達]\n"
-            final_report += get_macro_data() + "\n"
+            final_report += get_macro_data() + "\n\n"
             final_report += get_news()
 
-    # 發射戰報
     send_line_alert(final_report)
     print("方舟 6.0 任務完成，安全撤退。")
