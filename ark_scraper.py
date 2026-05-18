@@ -1,6 +1,6 @@
 """
 =============================================================================
-ARK 7.2: THE ULTIMATE QUANTITATIVE & MACRO PIPELINE (WHALE SNIPER EDITION)
+ARK 7.3: THE ULTIMATE QUANTITATIVE & MACRO PIPELINE (WHALE SNIPER EDITION)
 =============================================================================
 Architectural Note for Future Maintainers / AI Agents:
 1. Exponential Backoff: Bypasses API rate limits.
@@ -9,10 +9,10 @@ Architectural Note for Future Maintainers / AI Agents:
    - Night (12:00-04:59): Full Macro + News (Pre-US Market/Night Check).
    - Weekend Quiet: Sat afternoon & Sunday, News ONLY.
 3. Sandbox Fuse: TA is isolated. Drops NaN data to prevent Z-Score crashing.
-4. Objective Macro (v7.2 Upgrade): 
+4. Objective Macro (v7.3 Upgrade): 
    - Displays Open/Close and Body%. 
    - Integrates Gap Analysis (Open vs Prev Close) to detect Fake Breakouts (⚠️).
-   - [HOTFIX] Replaced yf.download with yf.Ticker().history to prevent 'Series' float casting error caused by yfinance MultiIndex updates.
+   - [FILED BUG FIX] Restricted stock-specific labels (誘多/洗盤) to actual equity assets. Macro indicators like VIX, Bonds, and FX return to pure trend icons to prevent logical contradictions.
 =============================================================================
 """
 
@@ -42,7 +42,7 @@ def fetch_with_retry(func, retries=3, delay=2):
                 return f"[資料異常] {str(e)}"
             time.sleep(delay * (2 ** attempt))
 
-# --- 3. 擴充版：全球總經與外資透視雷達 (v7.2 主力意圖解碼 + 防閃退版) ---
+# --- 3. 擴充版：全球總經與外資透視雷達 (v7.3 標籤邏輯隔離版) ---
 def get_macro_data():
     """抓取美股、美債等數據，並結合跳空缺口與K線實體抓出主力意圖"""
     def _fetch():
@@ -59,18 +59,20 @@ def get_macro_data():
             "XLF (美國金融ETF)": "XLF",
             "Nasdaq (科技板塊)": "^IXIC"
         }
+        
+        # 嚴格定義：只有這些真正的股票/ETF/權值指數，才可以套用主力「誘多/洗盤」的行為學標籤
+        equity_assets = ["TLT (20年美債價格)", "HYG (高收益垃圾債)", "TSM (台積電夜盤)", "EWT (外資台灣ETF)", "EEM (外資新興ETF)", "XLF (美國金融ETF)", "Nasdaq (科技板塊)"]
+        
         report = []
         for name, ticker in tickers.items():
-            # [HOTFIX] 改用 Ticker().history() 避開 yfinance 回傳 MultiIndex Series 的 Bug
             try:
                 data = yf.Ticker(ticker).history(period="5d", auto_adjust=False)
                 data = data.dropna()
                 
                 if len(data) >= 2:
-                    # 強制轉為純量 float，避免資料結構異常
-                    prev_close = float(data['Close'].iloc[-2]) 
-                    open_price = float(data['Open'].iloc[-1])  
-                    close_price = float(data['Close'].iloc[-1]) 
+                    prev_close = float(data['Close'].iloc[-2]) # 昨收
+                    open_price = float(data['Open'].iloc[-1])  # 今開
+                    close_price = float(data['Close'].iloc[-1]) # 今收
                     
                     # 計算 K 線實體大小 (收盤-開盤的幅度)
                     if open_price != 0:
@@ -78,10 +80,13 @@ def get_macro_data():
                     else:
                         body_pct = 0
                     
-                    # 終極主力意圖判定邏輯
-                    if open_price > prev_close and body_pct < -0.5:
+                    # 判斷是否為權益類資產
+                    is_equity = name in equity_assets
+                    
+                    # 終極主力意圖判定邏輯 (排除 VIX, 10Y美債, 台幣匯率, 原油等非股票指標)
+                    if is_equity and open_price > prev_close and body_pct < -0.5:
                         icon = "⚠️高檔倒貨(誘多)" 
-                    elif open_price < prev_close and body_pct > 0.5:
+                    elif is_equity and open_price < prev_close and body_pct > 0.5:
                         icon = "🟢低檔承接(洗盤)" 
                     elif body_pct > 0.5:
                         icon = "📈" 
@@ -124,7 +129,6 @@ def run_sandbox_ta():
         if data.empty:
             raise ValueError("歷史資料回傳空白")
             
-        # [防禦機制] 清除 Yahoo 週末與異常空值 (防止 Z-Score 當機)
         data = data.dropna()
 
         close_price = data['Close'].iloc[-1]
@@ -183,7 +187,6 @@ def send_line_alert(message):
         print("未偵測到 LINE 金鑰。")
         return
     
-    # [v7.1 修復] 放寬字數限制至 4000，防止新聞與宏觀數據被截斷
     safe_message = message[:4000] + "\n...(情報過大，啟動安全截斷)" if len(message) > 4000 else message
     url = 'https://api.line.me/v2/bot/message/push'
     headers = {
@@ -202,10 +205,9 @@ if __name__ == "__main__":
     weekday = now_tw.weekday()
     hour = now_tw.hour
 
-    header = f"🚀 【方舟 7.2 死神母艦】\n時間: {now_tw.strftime('%m-%d %H:%M')}\n" + "-"*20 + "\n"
+    header = f"🚀 【方舟 7.3 死神母艦】\n時間: {now_tw.strftime('%m-%d %H:%M')}\n" + "-"*20 + "\n"
     final_report = header
 
-    # 嚴格定義時間區間：清晨 5 點到中午 12 點才算早晨
     is_morning = 5 <= hour < 12 
     is_weekend_quiet = (weekday == 5 and hour >= 12) or (weekday == 6)
 
@@ -226,4 +228,4 @@ if __name__ == "__main__":
             final_report += get_news()
 
     send_line_alert(final_report)
-    print("方舟 7.2 任務完成，安全撤退。")
+    print("方舟 7.3 任務完成，安全撤退。")
