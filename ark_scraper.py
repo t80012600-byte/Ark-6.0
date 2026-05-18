@@ -1,6 +1,6 @@
 """
 =============================================================================
-ARK 7.1: THE ULTIMATE QUANTITATIVE & MACRO PIPELINE (WHALE SNIPER EDITION)
+ARK 7.2: THE ULTIMATE QUANTITATIVE & MACRO PIPELINE (WHALE SNIPER EDITION)
 =============================================================================
 Architectural Note for Future Maintainers / AI Agents:
 1. Exponential Backoff: Bypasses API rate limits.
@@ -9,9 +9,10 @@ Architectural Note for Future Maintainers / AI Agents:
    - Night (12:00-04:59): Full Macro + News (Pre-US Market/Night Check).
    - Weekend Quiet: Sat afternoon & Sunday, News ONLY.
 3. Sandbox Fuse: TA is isolated. Drops NaN data to prevent Z-Score crashing.
-4. Objective Macro (v7.1 Upgrade): Displays Open/Close and Body%. 
-   Integrates Gap Analysis (Open vs Prev Close) to detect Fake Breakouts (⚠️) 
-   and False Breakdowns (🟢).
+4. Objective Macro (v7.2 Upgrade): 
+   - Displays Open/Close and Body%. 
+   - Integrates Gap Analysis (Open vs Prev Close) to detect Fake Breakouts (⚠️).
+   - [HOTFIX] Replaced yf.download with yf.Ticker().history to prevent 'Series' float casting error caused by yfinance MultiIndex updates.
 =============================================================================
 """
 
@@ -41,7 +42,7 @@ def fetch_with_retry(func, retries=3, delay=2):
                 return f"[資料異常] {str(e)}"
             time.sleep(delay * (2 ** attempt))
 
-# --- 3. 擴充版：全球總經與外資透視雷達 (v7.1 主力意圖解碼版) ---
+# --- 3. 擴充版：全球總經與外資透視雷達 (v7.2 主力意圖解碼 + 防閃退版) ---
 def get_macro_data():
     """抓取美股、美債等數據，並結合跳空缺口與K線實體抓出主力意圖"""
     def _fetch():
@@ -60,40 +61,44 @@ def get_macro_data():
         }
         report = []
         for name, ticker in tickers.items():
-            # 抓取 5 天資料以確保能取得「昨日收盤價」，並過濾假日空值
-            data = yf.download(ticker, period="5d", auto_adjust=False, progress=False)
-            data = data.dropna() 
-            
-            if len(data) >= 2:
-                prev_close = float(data['Close'].iloc[-2]) # 昨收
-                open_price = float(data['Open'].iloc[-1])  # 今開
-                close_price = float(data['Close'].iloc[-1]) # 今收
+            # [HOTFIX] 改用 Ticker().history() 避開 yfinance 回傳 MultiIndex Series 的 Bug
+            try:
+                data = yf.Ticker(ticker).history(period="5d", auto_adjust=False)
+                data = data.dropna()
                 
-                # 計算 K 線實體大小 (收盤-開盤的幅度)
-                if open_price != 0:
-                    body_pct = ((close_price - open_price) / open_price) * 100
-                else:
-                    body_pct = 0
-                
-                # 終極主力意圖判定邏輯
-                if open_price > prev_close and body_pct < -0.5:
-                    icon = "⚠️高檔倒貨(誘多)" 
-                elif open_price < prev_close and body_pct > 0.5:
-                    icon = "🟢低檔承接(洗盤)" 
-                elif body_pct > 0.5:
-                    icon = "📈" 
-                elif body_pct < -0.5:
-                    icon = "📉" 
-                else:
-                    icon = "➖" 
+                if len(data) >= 2:
+                    # 強制轉為純量 float，避免資料結構異常
+                    prev_close = float(data['Close'].iloc[-2]) 
+                    open_price = float(data['Open'].iloc[-1])  
+                    close_price = float(data['Close'].iloc[-1]) 
                     
-                report.append(f"🔹 {name}: 收 {close_price:.2f} (開 {open_price:.2f} | 實體 {body_pct:+.2f}%) {icon}")
-            elif len(data) == 1:
-                # 若因極端情況只有一天資料的備用方案
-                close_price = float(data['Close'].iloc[-1])
-                report.append(f"🔹 {name}: 收 {close_price:.2f} (數據不足無法比對)")
-            else:
-                report.append(f"⚠️ {name}: [無報價/休市]")
+                    # 計算 K 線實體大小 (收盤-開盤的幅度)
+                    if open_price != 0:
+                        body_pct = ((close_price - open_price) / open_price) * 100
+                    else:
+                        body_pct = 0
+                    
+                    # 終極主力意圖判定邏輯
+                    if open_price > prev_close and body_pct < -0.5:
+                        icon = "⚠️高檔倒貨(誘多)" 
+                    elif open_price < prev_close and body_pct > 0.5:
+                        icon = "🟢低檔承接(洗盤)" 
+                    elif body_pct > 0.5:
+                        icon = "📈" 
+                    elif body_pct < -0.5:
+                        icon = "📉" 
+                    else:
+                        icon = "➖" 
+                        
+                    report.append(f"🔹 {name}: 收 {close_price:.2f} (開 {open_price:.2f} | 實體 {body_pct:+.2f}%) {icon}")
+                elif len(data) == 1:
+                    close_price = float(data['Close'].iloc[-1])
+                    report.append(f"🔹 {name}: 收 {close_price:.2f} (數據不足無法比對)")
+                else:
+                    report.append(f"⚠️ {name}: [無報價/休市]")
+            except Exception as e:
+                report.append(f"⚠️ {name}: [資料解析失敗]")
+                
         return "\n".join(report)
     return fetch_with_retry(_fetch)
 
@@ -197,7 +202,7 @@ if __name__ == "__main__":
     weekday = now_tw.weekday()
     hour = now_tw.hour
 
-    header = f"🚀 【方舟 7.1 死神母艦】\n時間: {now_tw.strftime('%m-%d %H:%M')}\n" + "-"*20 + "\n"
+    header = f"🚀 【方舟 7.2 死神母艦】\n時間: {now_tw.strftime('%m-%d %H:%M')}\n" + "-"*20 + "\n"
     final_report = header
 
     # 嚴格定義時間區間：清晨 5 點到中午 12 點才算早晨
@@ -221,4 +226,4 @@ if __name__ == "__main__":
             final_report += get_news()
 
     send_line_alert(final_report)
-    print("方舟 7.1 任務完成，安全撤退。")
+    print("方舟 7.2 任務完成，安全撤退。")
