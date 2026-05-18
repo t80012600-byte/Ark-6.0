@@ -1,11 +1,11 @@
-name: Ark 6.0 Scraper
+name: Ark 7.3 Scraper
 
 on:
   schedule:
-    # 🌅 晨間戰報：台灣時間早上 07:15 (UTC 23:15, 前一天)
-    - cron: '15 23 * * *'
-    # 🌃 夜間戰報：台灣時間晚上 21:45 (UTC 13:45)
-    - cron: '45 13 * * *'
+    # 🌅 晨間戰報：台灣時間早上 07:30 (UTC 23:30, 前一天)
+    - cron: '30 23 * * *'
+    # 🌃 夜間戰報：台灣時間晚上 22:30 (UTC 14:30)
+    - cron: '30 14 * * *'
   workflow_dispatch:
 
 jobs:
